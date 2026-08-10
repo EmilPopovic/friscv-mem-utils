@@ -14,3 +14,4 @@ sources:
   - src/friscv_from_mem.sv
   - src/friscv_to_mem.sv
   - src/mem_to_reg.sv
+  - src/friscv_guard.sv

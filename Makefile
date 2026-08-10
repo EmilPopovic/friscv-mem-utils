@@ -6,7 +6,8 @@ RTL := src/friscv_axi4_full_adapter_intf.sv \
        src/friscv_axi4_full_adapter.sv \
 	   src/friscv_from_mem.sv \
 	   src/friscv_to_mem.sv \
-	   src/mem_to_reg.sv
+	   src/mem_to_reg.sv \
+	   src/friscv_guard.sv
 
 VFLAGS := --timing --timescale 1ns/1ps -Wall
 VLINT_FLAGS := -Wno-SYNCASYNCNET
