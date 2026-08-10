@@ -1,0 +1,16 @@
+package:
+  name: friscv-adapters
+  description: Bus adapters for systems using the FRISC-V core
+  authors:
+    - "Emil Popović <mail@emilpopovic.me>"
+
+dependencies:
+  axi:                { git: "https://github.com/pulp-platform/axi.git",                version: 0.39.1 }
+  register_interface: { git: "https://github.com/pulp-platform/register_interface.git", version: 0.3.9  }
+
+sources:
+  - src/friscv_axi4_full_adapter.sv
+  - src/friscv_axi4_full_adapter_intf.sv
+  - src/friscv_from_mem.sv
+  - src/friscv_to_mem.sv
+  - src/mem_to_reg.sv
