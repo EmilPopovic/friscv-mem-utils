@@ -42,7 +42,7 @@ assign reg_req_o.write = we_i;
 assign reg_req_o.wdata = wdata_i;
 assign reg_req_o.wstrb = be_i;
 
-always_ff @(posedge clk_i) begin
+always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
         rvalid_o <= 1'b0;
         rdata_o  <= '0;

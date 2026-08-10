@@ -85,7 +85,7 @@ always_comb begin
     endcase
 end
 
-always_ff @(posedge i_clk) begin
+always_ff @(posedge i_clk or negedge i_rstn) begin
     if (!i_rstn) begin
         state_q <= S_IDLE;
         addr_q  <= '0;

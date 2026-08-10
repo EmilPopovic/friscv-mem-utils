@@ -160,7 +160,7 @@ assign mem_if.err        = w_read_completing  ? |m_axi_rresp :
                            w_write_completing ? |m_axi_bresp : 1'b0;
 
 // Clocked logic
-always_ff @(posedge i_clk) begin
+always_ff @(posedge i_clk or negedge i_rstn) begin
     if (!i_rstn) begin
         r_burst_en   <= 1'b0;
         r_state      <= S_IDLE;
