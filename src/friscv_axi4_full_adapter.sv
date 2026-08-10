@@ -11,11 +11,7 @@
  * It supports single-beat and burst transactions of BURST_LEN beats, which can be configured as needed.
  */
 
-`timescale 1ns / 1ps
-
-import friscv_pkg::*;
-
-module friscv_axi4_full_adapter #(
+module friscv_axi4_full_adapter import friscv_mem_pkg::*; #(
     parameter int unsigned BURST_LEN      = 8,
     parameter int unsigned AXI_ID_WIDTH   = 1,
     parameter int unsigned AXI_USER_WIDTH = 1
@@ -116,8 +112,7 @@ logic [2:0] w_axsize;
 always_comb begin
     case (r_size)
         WIDTH_I8, WIDTH_U8:   w_axsize = 3'd0;
-        WIDTH_I16, WIDg.sv
-TH_U16: w_axsize = 3'd1;
+        WIDTH_I16, WIDTH_U16: w_axsize = 3'd1;
         WIDTH_I32:            w_axsize = 3'd2;
         default:              w_axsize = 3'd2;
     endcase

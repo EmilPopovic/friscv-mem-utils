@@ -6,8 +6,6 @@
 // at your option, the Apache License version 2.0.
 // You may obtain a copy of the License at https://solderpad.org/licenses/SHL-2.1/
 
-`timescale 1ns/1ps
-
 module mem_to_reg #(
     parameter int unsigned AW        = 32,
     parameter int unsigned DW        = 32,

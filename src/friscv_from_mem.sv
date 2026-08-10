@@ -10,11 +10,7 @@
  * Bridge between Pulp mem master port and a friscv_mem_if master interface.
  */
 
-`timescale 1ns/1ps
-
-import friscv_pkg::*;
-
-module friscv_from_mem (
+module friscv_from_mem import friscv_mem_pkg::*; (
     input  logic         i_clk,
     input  logic         i_rstn,
 

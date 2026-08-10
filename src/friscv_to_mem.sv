@@ -11,11 +11,7 @@
  * Single-beat transfers only, bursts are not supported and burst_en is ignored.
  */
 
-`timescale 1ns/1ps
-
-import friscv_pkg::*;
-
-module friscv_to_mem #(
+module friscv_to_mem import friscv_mem_pkg::*; #(
     parameter bit REGISTER_REQ = 1'b0
 ) (
     input  logic         i_clk,

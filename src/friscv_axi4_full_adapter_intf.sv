@@ -6,8 +6,6 @@
 // at your option, the Apache License version 2.0.
 // You may obtain a copy of the License at https://solderpad.org/licenses/SHL-2.1/
 
-`timescale 1ns/1ps
-
 module friscv_axi4_full_adapter_intf #(
     parameter int unsigned BURST_LEN      = 8,
     parameter int unsigned AXI_ID_WIDTH   = 1,

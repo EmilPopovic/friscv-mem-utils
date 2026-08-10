@@ -8,9 +8,6 @@ RTL := src/friscv_axi4_full_adapter_intf.sv \
 	   src/friscv_to_mem.sv \
 	   src/mem_to_reg.sv
 
-AXI    := $(shell $(BENDER) path axi)
-REG_IF := $(shell $(BENDER) path register_interface)
-
 VFLAGS := --timing --timescale 1ns/1ps -Wall
 VLINT_FLAGS := -Wno-SYNCASYNCNET
 VSIM_FLAGS := --binary --assert --trace -Wno-UNUSEDSIGNAL -Wno-SYNCASYNCNET -Wno-DECLFILENAME
