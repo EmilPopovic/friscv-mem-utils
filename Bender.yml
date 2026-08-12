@@ -5,13 +5,15 @@ package:
     - "Emil Popović <mail@emilpopovic.me>"
 
 dependencies:
-  axi:                { git: "https://github.com/pulp-platform/axi.git",                version: 0.39.1 }
-  friscv-mem-if:      { git: "https://github.com/EmilPopovic/friscv-mem-if.git",        version: 0.1.0  }
+  axi:           { git: "https://github.com/pulp-platform/axi.git",         version: 0.39.1 }
+  friscv-mem-if: { git: "https://github.com/EmilPopovic/friscv-mem-if.git", version: 0.1.0  }
 
 sources:
-  - src/friscv_axi4_full_adapter.sv
-  - src/friscv_axi4_full_adapter_intf.sv
-  - src/friscv_from_mem.sv
+  - src/friscv_to_axi4_full.sv
+  - src/friscv_to_axi4_full_intf.sv
+  - src/mem_to_friscv.sv
   - src/friscv_to_mem.sv
   - src/mem_to_reg.sv
   - src/friscv_guard.sv
+  - src/friscv_sysbus_pkg.sv
+  - src/friscv_to_sysbus.sv

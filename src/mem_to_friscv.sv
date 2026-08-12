@@ -5,14 +5,16 @@
 // you may not use this file except in compliance with the License, or,
 // at your option, the Apache License version 2.0.
 // You may obtain a copy of the License at https://solderpad.org/licenses/SHL-2.1/
+//
+// Emil Popović <mail@emilpopovic.me>
 
 /*
  * Bridge between Pulp mem master port and a friscv_mem_if master interface.
  */
 
-module friscv_from_mem import friscv_mem_pkg::*; (
-    input  logic         i_clk,
-    input  logic         i_rstn,
+module mem_to_friscv import friscv_mem_pkg::*; (
+    input  logic         clk_i,
+    input  logic         rst_ni,
 
     input  logic         req_i,
     input  addr_t        addr_i,
@@ -25,7 +27,7 @@ module friscv_from_mem import friscv_mem_pkg::*; (
     output logic         other_err_o,
     output data_t        rdata_o,
 
-    friscv_mem_if.master mem_if
+    friscv_mem_if.master m_mem
 );
 
 typedef enum logic {
@@ -53,13 +55,13 @@ always_comb begin
 end
 
 // Constant request fields
-assign mem_if.addr     = addr_q;
-assign mem_if.size     = size;
-assign mem_if.wdata    = wdata_q;
-assign mem_if.burst_en = 1'b0;
+assign m_mem.addr     = addr_q;
+assign m_mem.size     = size;
+assign m_mem.wdata    = wdata_q;
+assign m_mem.burst_en = 1'b0;
 
 // Read data / errors returned to the DM
-assign rdata_o     = mem_if.rdata;
+assign rdata_o     = m_mem.rdata;
 assign other_err_o = 1'b0;
 
 always_comb begin
@@ -69,7 +71,7 @@ always_comb begin
     rvalid_o = 1'b0;
     err_o    = 1'b0;
 
-    mem_if.rw = RW_IDLE;
+    m_mem.rw = RW_IDLE;
 
     case (state_q)
         S_IDLE: begin
@@ -78,11 +80,11 @@ always_comb begin
         end
 
         S_BUSY: begin
-            mem_if.rw = we_q ? RW_WRITE : RW_READ;
-            if (!mem_if.wait_req) begin
+            m_mem.rw = we_q ? RW_WRITE : RW_READ;
+            if (!m_mem.wait_req) begin
                 rvalid_o = 1'b1;
-                err_o    = mem_if.err;
-                state_d     = S_IDLE;
+                err_o    = m_mem.err;
+                state_d  = S_IDLE;
             end
         end
 
@@ -90,8 +92,8 @@ always_comb begin
     endcase
 end
 
-always_ff @(posedge i_clk or negedge i_rstn) begin
-    if (!i_rstn) begin
+always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
         state_q <= S_IDLE;
         addr_q  <= '0;
         wdata_q <= '0;

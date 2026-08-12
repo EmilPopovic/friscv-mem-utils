@@ -5,71 +5,74 @@
 // you may not use this file except in compliance with the License, or,
 // at your option, the Apache License version 2.0.
 // You may obtain a copy of the License at https://solderpad.org/licenses/SHL-2.1/
+//
+// Emil Popović <mail@emilpopovic.me>
 
 /*
  * This module implements an adapter between the FRISC-V core's memory interface (friscv_mem_if) and a full AXI4 master interface.
- * It supports single-beat and burst transactions of BURST_LEN beats, which can be configured as needed.
+ * It supports single-beat and burst transactions of BurstLen beats, which can be configured as needed.
  */
 
-module friscv_axi4_full_adapter import friscv_mem_pkg::*; #(
-    parameter int unsigned BURST_LEN      = 8,
-    parameter int unsigned AXI_ID_WIDTH   = 1,
-    parameter int unsigned AXI_USER_WIDTH = 1
+module friscv_to_axi4_full import friscv_mem_pkg::*; #(
+    parameter int unsigned BurstLen     = 8,
+    parameter int unsigned AxiIdWidth   = 1,
+    parameter int unsigned AxiUserWidth = 1,
+    localparam int unsigned DataWidth   = DATA_WIDTH
 ) (
-    input  logic                      i_clk,
-    input  logic                      i_rstn,
-    friscv_mem_if.slave               mem_if,
+    input  logic                    clk_i,
+    input  logic                    rst_ni,
+    friscv_mem_if.slave             s_mem,
 
     // Write address channel
-    output logic                      m_axi_awvalid,
-    input  logic                      m_axi_awready,
-    output logic [AXI_ID_WIDTH-1:0]   m_axi_awid,
-    output logic [31:0]               m_axi_awaddr,
-    output logic [2:0]                m_axi_awsize,
-    output logic [3:0]                m_axi_awcache,
-    output logic [2:0]                m_axi_awprot,
-    output logic [1:0]                m_axi_awburst,
-    output logic [7:0]                m_axi_awlen,
-    output logic                      m_axi_awlock,
-    output logic [3:0]                m_axi_awqos,
-    output logic [3:0]                m_axi_awregion,
-    output logic [5:0]                m_axi_awatop,
-    output logic [AXI_USER_WIDTH-1:0] m_axi_awuser,
+    output logic                    m_axi_awvalid,
+    input  logic                    m_axi_awready,
+    output logic [AxiIdWidth-1:0]   m_axi_awid,
+    output logic [31:0]             m_axi_awaddr,
+    output logic [2:0]              m_axi_awsize,
+    output logic [3:0]              m_axi_awcache,
+    output logic [2:0]              m_axi_awprot,
+    output logic [1:0]              m_axi_awburst,
+    output logic [7:0]              m_axi_awlen,
+    output logic                    m_axi_awlock,
+    output logic [3:0]              m_axi_awqos,
+    output logic [3:0]              m_axi_awregion,
+    output logic [5:0]              m_axi_awatop,
+    output logic [AxiUserWidth-1:0] m_axi_awuser,
 
     // Write data channel
-    output logic                      m_axi_wvalid,
-    input  logic                      m_axi_wready,
-    output logic                      m_axi_wlast,
-    output data_t                     m_axi_wdata,
-    output logic [DATA_WIDTH/8-1:0]   m_axi_wstrb,
-    output logic [AXI_USER_WIDTH-1:0] m_axi_wuser,
+    output logic                    m_axi_wvalid,
+    input  logic                    m_axi_wready,
+    output logic                    m_axi_wlast,
+    output data_t                   m_axi_wdata,
+    output logic [DataWidth/8-1:0]  m_axi_wstrb,
+    output logic [AxiUserWidth-1:0] m_axi_wuser,
 
     // Write response channel
-    input  logic                      m_axi_bvalid,
-    output logic                      m_axi_bready,
-    input  logic [1:0]                m_axi_bresp,
+    input  logic                    m_axi_bvalid,
+    output logic                    m_axi_bready,
+    input  logic [1:0]              m_axi_bresp,
 
     // Read address channel
-    output logic                      m_axi_arvalid,
-    input  logic                      m_axi_arready,
-    output logic [AXI_ID_WIDTH-1:0]   m_axi_arid,
-    output logic [31:0]               m_axi_araddr,
-    output logic [2:0]                m_axi_arsize,
-    output logic [3:0]                m_axi_arcache,
-    output logic [2:0]                m_axi_arprot,
-    output logic [1:0]                m_axi_arburst,
-    output logic [7:0]                m_axi_arlen,
-    output logic                      m_axi_arlock,
-    output logic [3:0]                m_axi_arqos,
-    output logic [3:0]                m_axi_arregion,
-    output logic [AXI_USER_WIDTH-1:0] m_axi_aruser,
+    output logic                    m_axi_arvalid,
+    input  logic                    m_axi_arready,
+    output logic [AxiIdWidth-1:0]   m_axi_arid,
+    output logic [31:0]             m_axi_araddr,
+    output logic [2:0]              m_axi_arsize,
+    output logic [3:0]              m_axi_arcache,
+    output logic [2:0]              m_axi_arprot,
+    output logic [1:0]              m_axi_arburst,
+    output logic [7:0]              m_axi_arlen,
+    output logic                    m_axi_arlock,
+    output logic [3:0]              m_axi_arqos,
+    output logic [3:0]              m_axi_arregion,
+    output logic [AxiUserWidth-1:0] m_axi_aruser,
 
     // Read data channel
-    input  logic                      m_axi_rvalid,
-    output logic                      m_axi_rready,
-    input  logic                      m_axi_rlast,
-    input  data_t                     m_axi_rdata,
-    input  logic [1:0]                m_axi_rresp
+    input  logic                    m_axi_rvalid,
+    output logic                    m_axi_rready,
+    input  logic                    m_axi_rlast,
+    input  data_t                   m_axi_rdata,
+    input  logic [1:0]              m_axi_rresp
 );
 
 typedef enum logic [2:0] {
@@ -122,15 +125,13 @@ logic w_read_completing, w_write_completing;
 assign w_read_completing  = m_axi_rvalid && m_axi_rready;
 assign w_write_completing = m_axi_bvalid && m_axi_bready;
 
-// Constant assignments
-assign mem_if.rdata    = w_read_completing ? m_axi_rdata : r_rdata;
 assign m_axi_awid      = '0;
 assign m_axi_awaddr    = r_addr;
 assign m_axi_awsize    = w_axsize;
 assign m_axi_awcache   = 4'b0011;
 assign m_axi_awprot    = 3'b000;
 assign m_axi_awburst   = 2'b01;
-assign m_axi_awlen     = r_burst_en ? (BURST_LEN - 1) : 8'h00;
+assign m_axi_awlen     = r_burst_en ? (BurstLen - 1) : 8'h00;
 assign m_axi_awlock    = 1'b0;
 assign m_axi_awqos     = 4'h0;
 assign m_axi_awregion  = '0;
@@ -145,37 +146,41 @@ assign m_axi_arsize    = w_axsize;
 assign m_axi_arcache   = 4'b0011;
 assign m_axi_arprot    = 3'b000;
 assign m_axi_arburst   = 2'b01;
-assign m_axi_arlen     = r_burst_en ? (BURST_LEN - 1) : 8'h00;
+assign m_axi_arlen     = r_burst_en ? (BurstLen - 1) : 8'h00;
 assign m_axi_arlock    = 1'b0;
 assign m_axi_arqos     = 4'h0;
 assign m_axi_arregion  = '0;
 assign m_axi_aruser    = '0;
 
-assign mem_if.wait_req   = (r_state == S_W_RET)  ? !m_axi_bvalid :
-                           (r_state == S_R_DATA) ? !(m_axi_rvalid && (!r_burst_en || m_axi_rlast)) : 1'b1;
-assign mem_if.beat_valid = r_burst_en &&
-                           (((r_state == S_R_DATA) && m_axi_rvalid && m_axi_rready) ||
-                            ((r_state == S_W)      && m_axi_wvalid && m_axi_wready));
-assign mem_if.err        = w_read_completing  ? |m_axi_rresp :
-                           w_write_completing ? |m_axi_bresp : 1'b0;
+assign s_mem.rdata      = w_read_completing ? m_axi_rdata : r_rdata;
+assign s_mem.wait_req   = (r_state == S_W_RET)  ? !m_axi_bvalid :
+                          (r_state == S_R_DATA) ? !(m_axi_rvalid && (!r_burst_en || m_axi_rlast)) : 1'b1;
+assign s_mem.beat_valid = r_burst_en &&
+                          (((r_state == S_R_DATA) && m_axi_rvalid && m_axi_rready) ||
+                           ((r_state == S_W)      && m_axi_wvalid && m_axi_wready));
+assign s_mem.err        = w_read_completing  ? |m_axi_rresp :
+                          w_write_completing ? |m_axi_bresp : 1'b0;
 
 // Clocked logic
-always_ff @(posedge i_clk or negedge i_rstn) begin
-    if (!i_rstn) begin
+always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
         r_burst_en   <= 1'b0;
         r_state      <= S_IDLE;
         r_aw_done    <= 1'b0;
         r_w_done     <= 1'b0;
         r_count      <= '0;
-        {r_addr, r_wdata, r_rdata, r_size} <= '0;
+        r_addr       <= '0;
+        r_wdata      <= '0;
+        r_rdata      <= '0;
+        r_size       <= WIDTH_I32;
     end else begin
         r_state <= w_next_state;
 
-        if (r_state == S_IDLE && mem_if.rw != RW_IDLE) begin
-            r_addr     <= mem_if.addr;
-            r_wdata    <= mem_if.wdata;
-            r_size     <= mem_if.size;
-            r_burst_en <= mem_if.burst_en;
+        if (r_state == S_IDLE && s_mem.rw != RW_IDLE) begin
+            r_addr     <= s_mem.addr;
+            r_wdata    <= s_mem.wdata;
+            r_size     <= s_mem.size;
+            r_burst_en <= s_mem.burst_en;
             r_aw_done  <= 1'b0;
             r_w_done   <= 1'b0;
             r_count    <= '0;
@@ -187,7 +192,7 @@ always_ff @(posedge i_clk or negedge i_rstn) begin
 
             if (r_burst_en && m_axi_wvalid && m_axi_wready) begin
                 r_count <= r_count + 1;
-                r_wdata <= mem_if.wdata;
+                r_wdata <= s_mem.wdata;
             end
         end
 
@@ -206,15 +211,15 @@ always_comb begin
 
     case (r_state)
         S_IDLE: begin
-            if (mem_if.rw == RW_WRITE || mem_if.rw == RW_READ)
-                w_next_state = (mem_if.rw == RW_WRITE) ? S_W : S_R_ADDR;
+            if (s_mem.rw == RW_WRITE || s_mem.rw == RW_READ)
+                w_next_state = (s_mem.rw == RW_WRITE) ? S_W : S_R_ADDR;
         end
 
         S_W: begin
             m_axi_awvalid = !r_aw_done;
             if (r_burst_en) begin
-                m_axi_wvalid = !r_w_done && (r_count < BURST_LEN);
-                m_axi_wlast  = (r_count == BURST_LEN - 1);
+                m_axi_wvalid = !r_w_done && (r_count < BurstLen);
+                m_axi_wlast  = (r_count == BurstLen - 1);
             end else begin
                 m_axi_wvalid = !r_w_done;
                 m_axi_wlast  = 1'b1;
