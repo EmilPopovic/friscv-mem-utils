@@ -17,3 +17,5 @@ sources:
   - src/friscv_guard.sv
   - src/friscv_sysbus_pkg.sv
   - src/friscv_to_sysbus.sv
+  - src/friscv_ocm_llc.sv
+  - src/friscv_mem_hub.sv
