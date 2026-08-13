@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-13
+
+### Added
+
+- `friscv_mem_hub` takes `CachedBase` and `CachedSize`, a cacheable sub-window of the external region.
+
+### Changed
+
+- **Breaking:** `friscv_ocm_llc` parameters `ExtBase` and `ExtLog2` are now
+  `CachedBase` and `CachedLog2`. They always described the cacheable region rather
+  than the external one; the old names only matched because `friscv_mem_hub` passed
+  its external region straight through.
+
 ## [1.1.0] - 2026-08-13
 
 ### Changed

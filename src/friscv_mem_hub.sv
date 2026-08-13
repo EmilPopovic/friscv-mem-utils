@@ -9,13 +9,15 @@
 // Emil Popović <mail@emilpopovic.me>
 
 module friscv_mem_hub import friscv_mem_pkg::*; #(
-    parameter int unsigned ExtBase   = 32'h8000_0000,
-    parameter int unsigned ExtSize   = 32'h8000_0000,
-    parameter int unsigned OcmBase   = 32'h0000_0000,
-    parameter int unsigned OcmSize   = 32'h0100_0000,
-    parameter int unsigned LineBytes = 64,
-    parameter int unsigned Ways      = 4,
-    parameter bit          SramTags  = 1'b1
+    parameter int unsigned ExtBase    = 32'h8000_0000,
+    parameter int unsigned ExtSize    = 32'h8000_0000,
+    parameter int unsigned CachedBase = ExtBase,
+    parameter int unsigned CachedSize = ExtSize,
+    parameter int unsigned OcmBase    = 32'h0000_0000,
+    parameter int unsigned OcmSize    = 32'h0100_0000,
+    parameter int unsigned LineBytes  = 64,
+    parameter int unsigned Ways       = 4,
+    parameter bit          SramTags   = 1'b1
 ) (
     input  logic            clk_i,
     input  logic            rst_ni,
@@ -27,7 +29,11 @@ module friscv_mem_hub import friscv_mem_pkg::*; #(
 
     input  logic [Ways-1:0] llcsel_i,
     input  logic            crpsel_i,
-    input  logic            llcinv_i
+    input  logic            llcinv_i,
+
+    output logic            rd_acc_o,
+    output logic            rd_miss_o,
+    output logic            wr_acc_o
 );
 
 if (ExtBase % LineBytes != 0) begin : gen_chk_mem_base
@@ -41,6 +47,12 @@ if (ExtSize == 0 || ExtSize != 1 << $clog2(ExtSize)) begin : gen_chk_mem_size
 end
 if (OcmSize == 0 || OcmSize != 1 << $clog2(OcmSize)) begin : gen_chk_sram_size
     $fatal(1, "OcmSize must be a power of 2, got %0x", OcmSize);
+end
+if (CachedSize == 0 || CachedSize != 1 << $clog2(CachedSize)) begin : gen_chk_cache_size
+    $fatal(1, "CachedSize must be a power of 2, got %0x", CachedSize);
+end
+if (CachedBase < ExtBase || (65'(CachedBase) + 65'(CachedSize)) > (65'(ExtBase) + 65'(ExtSize))) begin : gen_chk_cache_window
+    $fatal(1, "the cacheable window (%0x + %0x) must lie inside the external region (%0x + %0x)", CachedBase, CachedSize, ExtBase, ExtSize);
 end
 
 friscv_mem_if granted_if ();
@@ -229,21 +241,24 @@ assign granted_if.beat_valid = r_sel_llc ? llc_if.beat_valid : m_sys_if.beat_val
 // ============================================================
 
 friscv_ocm_llc #(
-    .OcmBase      ( OcmBase         ),
-    .ExtBase      ( ExtBase         ),
-    .ExtLog2      ( $clog2(ExtSize) ),
-    .LineBytes    ( LineBytes       ),
-    .Ways         ( Ways            ),
-    .OcmSizeBytes ( OcmSize         ),
-    .SramTags     ( SramTags        )
+    .OcmBase      ( OcmBase            ),
+    .CacheBase    ( CachedBase         ),
+    .CacheLog2    ( $clog2(CachedSize) ),
+    .LineBytes    ( LineBytes          ),
+    .Ways         ( Ways               ),
+    .OcmSizeBytes ( OcmSize            ),
+    .SramTags     ( SramTags           )
 ) ocm_llc (
     .clk_i,
     .rst_ni,
     .crpsel_i,
     .llcinv_i,
-    .way_is_cache_i ( llcsel_i ),
-    .s_mem_if       ( llc_if   ),
-    .m_mem_if       ( m_ext_if )
+    .llcsel_i,
+    .rd_acc_o,
+    .rd_miss_o,
+    .wr_acc_o,
+    .s_mem_if ( llc_if   ),
+    .m_mem_if ( m_ext_if )
 );
 
 endmodule

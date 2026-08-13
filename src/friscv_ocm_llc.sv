@@ -11,8 +11,8 @@
 
 module friscv_ocm_llc import friscv_mem_pkg::*; #(
     parameter  int unsigned OcmBase      = 32'h0000_0000,
-    parameter  int unsigned ExtBase      = 32'h8000_0000,
-    parameter  int unsigned ExtLog2      = 25,  // 32MB
+    parameter  int unsigned CachedBase   = 32'h8000_0000,
+    parameter  int unsigned CachedLog2   = 25,  // 32MB
     parameter  int unsigned LineBytes    = 64,
     parameter  int unsigned Ways         = 4,
     parameter  int unsigned OcmSizeBytes = 16*1024,
@@ -20,9 +20,16 @@ module friscv_ocm_llc import friscv_mem_pkg::*; #(
 ) (
     input  logic            clk_i,
     input  logic            rst_ni,
-    input  logic [Ways-1:0] way_is_cache_i,  // 1 = this way is cache, 0 = this way is OCM
-    input  logic            crpsel_i,        // 0 = round-robin, 1 = random
-    input  logic            llcinv_i,        // pulse to invalidate every way
+
+    // LLC configuration inputs
+    input  logic [Ways-1:0] llcsel_i,  // 1 = this way is cache, 0 = this way is OCM
+    input  logic            crpsel_i,  // 0 = round-robin, 1 = random
+    input  logic            llcinv_i,  // pulse to invalidate every way
+
+    // Cache statistics outputs
+    output logic            rd_acc_o,  // cacheable read access accepted
+    output logic            rd_miss_o, // cacheable read access missed in cache
+    output logic            wr_acc_o,  // cacheable write access accepted
 
     friscv_mem_if.slave     s_mem_if,  // From the hub: OCM region and cacheable region
     friscv_mem_if.master    m_mem_if   // To external memory
@@ -31,7 +38,7 @@ module friscv_ocm_llc import friscv_mem_pkg::*; #(
 localparam int unsigned Sets      = OcmSizeBytes / (LineBytes * Ways);
 localparam int unsigned OffsetW   = $clog2(LineBytes);
 localparam int unsigned IdxW      = $clog2(Sets);
-localparam int unsigned TagW      = ExtLog2 - OffsetW - IdxW;
+localparam int unsigned TagW      = CachedLog2 - OffsetW - IdxW;
 localparam int unsigned LineWords = LineBytes / 4;
 localparam int unsigned BeatW     = $clog2(LineWords);
 localparam int unsigned WaySelW   = $clog2(Ways);
@@ -57,8 +64,8 @@ end
 if (IdxW + BeatW != WayAddrW) begin : gen_chk_split
     $fatal(1, "the OCM and cache address splits disagree");
 end
-if (ExtLog2 <= OffsetW + IdxW) begin : gen_chk_tag
-    $fatal(1, "ExtLog2 (%0d) leaves no tag bits", ExtLog2);
+if (CachedLog2 <= OffsetW + IdxW) begin : gen_chk_tag
+    $fatal(1, "CachedLog2 (%0d) leaves no tag bits", CachedLog2);
 end
 
 // ============================================================
@@ -95,7 +102,7 @@ friscv_to_mem #(
 // ============================================================
 
 logic w_match_cached, w_match_ocm;
-assign w_match_cached = (w_addr - addr_t'(ExtBase)) < (addr_t'(1) << ExtLog2);
+assign w_match_cached = (w_addr - addr_t'(CachedBase)) < (addr_t'(1) << CachedLog2);
 assign w_match_ocm    = (w_addr - addr_t'(OcmBase)) < addr_t'(OcmSizeBytes);
 
 // If regions overlap, OCM takes priority
@@ -137,7 +144,7 @@ end
 // ============================================================
 
 logic [Ways-1:0] r_mode, w_mode_changed;
-assign w_mode_changed = way_is_cache_i ^ r_mode;
+assign w_mode_changed = llcsel_i ^ r_mode;
 
 // A way switching from cache to OCM is walked word by word and zeroed.
 // All other transactions are blocked until the zeroing is complete.
@@ -145,7 +152,7 @@ logic [Ways-1:0]     w_zero_ways;
 logic [WayAddrW-1:0] r_zero_addr;
 logic                w_zero_busy, w_zero_last;
 
-assign w_zero_ways = r_mode & ~way_is_cache_i;
+assign w_zero_ways = r_mode & ~llcsel_i;
 assign w_zero_busy = |w_zero_ways;
 assign w_zero_last = w_zero_busy && (r_zero_addr == WayAddrW'(WayWords-1));
 
@@ -157,7 +164,7 @@ end
 
 always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni)                          r_mode <= '0;
-    else if (!w_zero_busy || w_zero_last) r_mode <= way_is_cache_i;
+    else if (!w_zero_busy || w_zero_last) r_mode <= llcsel_i;
 end
 
 logic [Ways-1:0] w_inv_ways;
@@ -184,7 +191,7 @@ logic w_dn_done;     // the external request completes this cycle
 logic w_refill_err;  // some beat of the current refill reported an error
 
 logic w_cache_enabled;
-assign w_cache_enabled = |way_is_cache_i;  // Cache is enabled if any way is configured as cache
+assign w_cache_enabled = |llcsel_i;  // Cache is enabled if any way is configured as cache
 
 logic w_is_lookup;
 assign w_is_lookup = w_sel_cached && w_cache_enabled;
@@ -227,7 +234,7 @@ assign w_lookup_en = !w_inv && ((r_state == S_LLC_IDLE && w_req && w_is_lookup) 
 logic [OffsetW-1:0] w_offset;
 logic [IdxW-1:0]    w_idx;
 logic [TagW-1:0]    w_tag;
-assign {w_tag, w_idx, w_offset} = w_addr[ExtLog2-1:0];
+assign {w_tag, w_idx, w_offset} = w_addr[CachedLog2-1:0];
 
 // Line selection
 logic [WayAddrW-1:0] w_lookup_addr;
@@ -278,7 +285,7 @@ if (SramTags) begin : gen_tag_sram
     );
 
     for (genvar i = 0; i < Ways; i++) begin : gen_hit_arr
-        assign w_hit_arr[i] = way_is_cache_i[i] && r_valid_arr[i][w_idx] && (w_tag_rdata[i*TagSlotW +: TagW] == w_tag);
+        assign w_hit_arr[i] = llcsel_i[i] && r_valid_arr[i][w_idx] && (w_tag_rdata[i*TagSlotW +: TagW] == w_tag);
     end
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -291,7 +298,7 @@ end else begin : gen_tag_flops
     logic [Ways-1:0]                      w_hit_arr_d;
 
     for (genvar i = 0; i < Ways; i++) begin : gen_hit_arr
-        assign w_hit_arr_d[i] = way_is_cache_i[i] && r_valid_arr[i][w_idx] && (r_tag_arr[i][w_idx] == w_tag);
+        assign w_hit_arr_d[i] = llcsel_i[i] && r_valid_arr[i][w_idx] && (r_tag_arr[i][w_idx] == w_tag);
     end
 
     // r_hit_arr behaves like the SRAM output
@@ -307,6 +314,15 @@ end else begin : gen_tag_flops
         else if (w_alloc) r_tag_arr[r_victim][w_idx] <= w_tag;
     end
 end
+
+// One pulse per cacheable read that reaches a tag lookup
+assign rd_acc_o  = (r_state == S_LLC_IDLE) && w_req && w_is_lookup && !w_inv && !w_we;
+
+// One pulse per read miss
+assign rd_miss_o = (r_state == S_LLC_LOOKUP) && !w_we && !w_hit;
+
+// One pulse per write
+assign wr_acc_o = (r_state == S_LLC_LOOKUP) && w_we;
 
 // ============================================================
 // Replacement policy
@@ -340,17 +356,17 @@ always_comb begin
     w_victim = '0;
     // Lowest priority: wrap round to an eligible way below the starting index
     for (int unsigned i = Ways; i > 0; i--) begin
-        if (way_is_cache_i[i-1] && WaySelW'(i-1) < w_start)
+        if (llcsel_i[i-1] && WaySelW'(i-1) < w_start)
             w_victim = WaySelW'(i-1);
     end
     // Then the first eligible way at or above the starting index
     for (int unsigned i = Ways; i > 0; i--) begin
-        if (way_is_cache_i[i-1] && WaySelW'(i-1) >= w_start)
+        if (llcsel_i[i-1] && WaySelW'(i-1) >= w_start)
             w_victim = WaySelW'(i-1);
     end
     // Highest priority: an eligible way that holds nothing yet
     for (int unsigned i = Ways; i > 0; i--) begin
-        if (way_is_cache_i[i-1] && !r_valid_arr[i-1][w_idx])
+        if (llcsel_i[i-1] && !r_valid_arr[i-1][w_idx])
             w_victim = WaySelW'(i-1);
     end
 end
@@ -480,7 +496,7 @@ logic [WaySelW-1:0]  w_ocm_way_sel;
 assign w_ocm_addr    = w_addr[WayAddrW+1:2];
 assign w_ocm_way_sel = w_addr[WayAddrW+WaySelW+1:WayAddrW+2];
 
-assign w_illegal_ocm_access = w_sel_ocm && way_is_cache_i[w_ocm_way_sel];
+assign w_illegal_ocm_access = w_sel_ocm && llcsel_i[w_ocm_way_sel];
 
 // A write hit updates the line in place only once the external write has been accepted
 logic w_write_hit;
@@ -495,7 +511,7 @@ always_comb begin
         w_way_wdata[i] = '0;
         w_way_be   [i] = '0;
 
-        if (way_is_cache_i[i]) begin
+        if (llcsel_i[i]) begin
             if (r_state == S_LLC_REFILL) begin
                 if (r_victim == WaySelW'(i) && m_mem_if.beat_valid) begin
                     w_way_req  [i] = 1'b1;
@@ -542,7 +558,7 @@ always_comb begin
     end else begin
         w_rdata = '0;
         for (int unsigned i = 0; i < Ways; i++) begin
-            if (!way_is_cache_i[i] && w_ocm_way_sel == WaySelW'(i) && w_sel_ocm) begin
+            if (!llcsel_i[i] && w_ocm_way_sel == WaySelW'(i) && w_sel_ocm) begin
                 w_rdata = w_way_rdata[i];
             end
         end
