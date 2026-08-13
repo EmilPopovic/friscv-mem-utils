@@ -1,5 +1,5 @@
 package:
-  name: friscv-adapters
+  name: friscv-mem-utils
   description: Bus adapters for systems using the FRISC-V core
   authors:
     - "Emil Popović <mail@emilpopovic.me>"
