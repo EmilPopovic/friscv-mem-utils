@@ -242,8 +242,8 @@ assign granted_if.beat_valid = r_sel_llc ? llc_if.beat_valid : m_sys_if.beat_val
 
 friscv_ocm_llc #(
     .OcmBase      ( OcmBase            ),
-    .CacheBase    ( CachedBase         ),
-    .CacheLog2    ( $clog2(CachedSize) ),
+    .CachedBase   ( CachedBase         ),
+    .CachedLog2   ( $clog2(CachedSize) ),
     .LineBytes    ( LineBytes          ),
     .Ways         ( Ways               ),
     .OcmSizeBytes ( OcmSize            ),

@@ -7,14 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.0] - 2026-08-13
+## [2.0.1] - 2026-08-13
+
+### Fixed
+
+- Fixed elaboration error in `friscv_mem_hub.sv`.
+
+## [2.0.0] - 2026-08-13 [YANKED]
 
 ### Added
 
 - `friscv_mem_hub` takes `CachedBase` and `CachedSize`, a cacheable sub-window of the external region.
+- `friscv_ocm_llc` and `friscv_mem_hub` expose `rd_acc_o`, `rd_miss_o` and `wr_acc_o`,
+  single-cycle pulses for cache statistics. `rd_acc_o` fires on entry to a lookup, so
+  the replay lookup after a refill does not double-count; `rd_miss_o` fires once per
+  read miss, since that replay always hits. Cacheable writes are always write-through
+  and so are counted separately rather than as hits or misses.
 
 ### Changed
 
+- [YANKED] because of elaboration error in `friscv_mem_hub.sv`.
 - **Breaking:** `friscv_ocm_llc` parameters `ExtBase` and `ExtLog2` are now
   `CachedBase` and `CachedLog2`. They always described the cacheable region rather
   than the external one; the old names only matched because `friscv_mem_hub` passed
