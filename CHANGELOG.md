@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-13
+
+### Changed
+
+- Renamed repo to `friscv-mem-utils`.
+
+### Added
+
+- Add OCM/LLC module (`friscv_ocm_llc.sv`).
+- Add Memory Hub module (`friscv_mem_hub.sv`).
+
 ## [1.0.0] - 2026-08-13
 
 ### Changed

@@ -1,8 +1,13 @@
-# FRISC-V Adapters
+# FRISC-V Memory Utilities
 
-This repo contains bus adapters and other utility modules for working with the FRISC-V memory interface (`friscv_mem_if`).
+This repo contains reusable memory modules and protocol converters for working with the FRISC-V memory interface (`friscv_mem_if`).
 
-**Supported conversions:**
+**Included functional modules:**
+
+- `friscv_ocm_llc.sv` - A per-way-configurable On Chip Memory / Last Level Cache.
+- `friscv_mem_hub.sv` - A two-port hub (for CPU and DM) splitting the bus between a cached (OCM/LLC) region and uncached System (SoC) region.
+
+**Included protocol converters:**
 
 - FRISC-V -> AXI4 Full (PULP interface and flat) - `friscv_to_axi4_full_intf.sv`, `friscv_to_axi4_full.sv`
 - FRISC-V **(no burst)** -> PULP MEM - `friscv_to_mem.sv`
