@@ -3,6 +3,7 @@ package:
   description: Bus adapters for systems using the FRISC-V core
   authors:
     - "Emil Popović <mail@emilpopovic.me>"
+    - "Matej Jurasić <matej.jurasic@cappig.dev>"
 
 dependencies:
   axi:           { git: "https://github.com/pulp-platform/axi.git",         version: 0.39.1 }
