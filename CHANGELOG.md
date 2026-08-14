@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-08-14
+
 ### Added
 
 - `friscv_mem_hub` takes a third subordinate port. `s_a_if` and `s_b_if` are symmetric.
