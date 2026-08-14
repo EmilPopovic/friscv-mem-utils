@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `friscv_mem_hub` takes a third subordinate port. `s_a_if` and `s_b_if` are symmetric.
+
+### Changed
+
+- **Breaking:** `friscv_mem_hub` port `s_cpu_if` is now `s_a_if`, and the new `s_b_if`
+  must be connected. An existing integration can move `s_cpu_if` to `s_a_if` and tie
+  `s_b_if` off with `rw = RW_IDLE` to keep the previous behaviour.
+
 ## [2.0.1] - 2026-08-13
 
 ### Fixed

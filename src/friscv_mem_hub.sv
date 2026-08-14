@@ -8,6 +8,15 @@
 //
 // Emil Popović <mail@emilpopovic.me>
 
+/*
+ * Arbitrates three subordinate ports onto the switchable OCM/LLC block and the
+ * system bus, decoding the target from the granted address.
+ *
+ * s_a_if and s_b_if are symmetric, the hub attaches no meaning to
+ * either one and rotates priority between them on every completed transaction.
+ * s_dm_if takes priority over both.
+ */
+
 module friscv_mem_hub import friscv_mem_pkg::*; #(
     parameter int unsigned ExtBase    = 32'h8000_0000,
     parameter int unsigned ExtSize    = 32'h8000_0000,
@@ -22,8 +31,9 @@ module friscv_mem_hub import friscv_mem_pkg::*; #(
     input  logic            clk_i,
     input  logic            rst_ni,
 
-    friscv_mem_if.slave     s_cpu_if,  // To CPU
-    friscv_mem_if.slave     s_dm_if,   // To DM
+    friscv_mem_if.slave     s_a_if,    // Symmetric port A
+    friscv_mem_if.slave     s_b_if,    // Symmetric port B
+    friscv_mem_if.slave     s_dm_if,   // Priority port
     friscv_mem_if.master    m_ext_if,  // To downstream
     friscv_mem_if.master    m_sys_if,  // To SoC
 
@@ -58,21 +68,28 @@ end
 friscv_mem_if granted_if ();
 
 // ============================================================
-// Arbitration between CPU and DM master
+// Arbitration
 // ============================================================
 
 typedef enum logic [1:0] {
     S_IDLE,
-    S_HOLD_CPU,
+    S_HOLD_A,
+    S_HOLD_B,
     S_HOLD_DM
 } state_t;
 
 state_t r_state, w_next_state;
 
-addr_t      r_cpu_addr;
-mem_width_e r_cpu_size;
-data_t      r_cpu_wdata;
-rw_cmd_e    r_cpu_rw;
+logic r_b_priority;
+
+addr_t      r_a_addr;
+mem_width_e r_a_size;
+data_t      r_a_wdata;
+rw_cmd_e    r_a_rw;
+addr_t      r_b_addr;
+mem_width_e r_b_size;
+data_t      r_b_wdata;
+rw_cmd_e    r_b_rw;
 addr_t      r_dm_addr;
 mem_width_e r_dm_size;
 data_t      r_dm_wdata;
@@ -82,36 +99,45 @@ rw_cmd_e    r_dm_rw;
 // Issue selection
 // ============================================================
 
-logic w_take_cpu, w_take_dm, w_take_any;
+logic w_take_a, w_take_b, w_take_dm, w_take_any;
 
-logic w_cpu_en, w_dm_en;
-assign w_cpu_en = s_cpu_if.rw != RW_IDLE;
-assign w_dm_en  = s_dm_if.rw  != RW_IDLE;
+logic w_a_en, w_b_en, w_dm_en;
+assign w_a_en  = s_a_if.rw  != RW_IDLE;
+assign w_b_en  = s_b_if.rw  != RW_IDLE;
+assign w_dm_en = s_dm_if.rw != RW_IDLE;
 
 always_comb begin
-    w_take_cpu = 1'b0;
+    w_take_a  = 1'b0;
+    w_take_b  = 1'b0;
     w_take_dm = 1'b0;
     if (r_state == S_IDLE) begin
-        // DM has priority
-        if (w_cpu_en && w_dm_en) begin
-            w_take_cpu = 1'b0;
-            w_take_dm  = 1'b1;
+        if (w_dm_en) begin
+            // DM has priority over A and B
+            w_take_dm = 1'b1;
+        end else if (w_a_en && w_b_en) begin
+            // A and B alternate if both requesting
+            w_take_a = !r_b_priority;
+            w_take_b =  r_b_priority;
         end else begin
-            w_take_cpu = w_cpu_en;
-            w_take_dm  = w_dm_en;
+            w_take_a = w_a_en;
+            w_take_b = w_b_en;
         end
     end
 end
 
-assign w_take_any = w_take_cpu | w_take_dm;
+assign w_take_any = w_take_a | w_take_b | w_take_dm;
 
 // A transaction is on the bus this cycle if it is being issued now, or held
-logic w_busy_cpu, w_busy_dm;
-assign w_busy_cpu = w_take_cpu | (r_state == S_HOLD_CPU);
-assign w_busy_dm  = w_take_dm  | (r_state == S_HOLD_DM);
+logic w_busy_a, w_busy_b, w_busy_dm;
+assign w_busy_a  = w_take_a  | (r_state == S_HOLD_A);
+assign w_busy_b  = w_take_b  | (r_state == S_HOLD_B);
+assign w_busy_dm = w_take_dm | (r_state == S_HOLD_DM);
 
 logic w_park;
 assign w_park = w_take_any;
+
+logic w_done;
+assign w_done = (r_state != S_IDLE) & ~granted_if.wait_req;
 
 // ============================================================
 // Next state
@@ -120,8 +146,13 @@ assign w_park = w_take_any;
 always_comb begin
     w_next_state = r_state;
     case (r_state)
-        S_IDLE:     if (w_park) w_next_state = w_take_cpu ? S_HOLD_CPU : S_HOLD_DM;
-        S_HOLD_CPU,
+        S_IDLE:     if (w_park) begin
+                        if      (w_take_dm) w_next_state = S_HOLD_DM;
+                        else if (w_take_a)  w_next_state = S_HOLD_A;
+                        else                w_next_state = S_HOLD_B;
+                    end
+        S_HOLD_A,
+        S_HOLD_B,
         S_HOLD_DM:  if (!granted_if.wait_req) w_next_state = S_IDLE;
         default:    w_next_state = S_IDLE;
     endcase
@@ -133,30 +164,47 @@ end
 
 always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
-        r_state     <= S_IDLE;
-        r_cpu_addr  <= '0;
-        r_cpu_size  <= WIDTH_I32;
-        r_cpu_wdata <= '0;
-        r_cpu_rw    <= RW_IDLE;
-        r_dm_addr   <= '0;
-        r_dm_size   <= WIDTH_I32;
-        r_dm_wdata  <= '0;
-        r_dm_rw     <= RW_IDLE;
+        r_state      <= S_IDLE;
+        r_b_priority <= 1'b0;
+        r_a_addr     <= '0;
+        r_a_size     <= WIDTH_I32;
+        r_a_wdata    <= '0;
+        r_a_rw       <= RW_IDLE;
+        r_b_addr     <= '0;
+        r_b_size     <= WIDTH_I32;
+        r_b_wdata    <= '0;
+        r_b_rw       <= RW_IDLE;
+        r_dm_addr    <= '0;
+        r_dm_size    <= WIDTH_I32;
+        r_dm_wdata   <= '0;
+        r_dm_rw      <= RW_IDLE;
     end else begin
         r_state <= w_next_state;
 
         // Freeze the request if it is going to be held
-        if (w_park && w_take_cpu) begin
-            r_cpu_addr  <= s_cpu_if.addr;
-            r_cpu_size  <= s_cpu_if.size;
-            r_cpu_wdata <= s_cpu_if.wdata;
-            r_cpu_rw    <= s_cpu_if.rw;
+        if (w_park && w_take_a) begin
+            r_a_addr  <= s_a_if.addr;
+            r_a_size  <= s_a_if.size;
+            r_a_wdata <= s_a_if.wdata;
+            r_a_rw    <= s_a_if.rw;
+        end
+        if (w_park && w_take_b) begin
+            r_b_addr  <= s_b_if.addr;
+            r_b_size  <= s_b_if.size;
+            r_b_wdata <= s_b_if.wdata;
+            r_b_rw    <= s_b_if.rw;
         end
         if (w_park && w_take_dm) begin
             r_dm_addr  <= s_dm_if.addr;
             r_dm_size  <= s_dm_if.size;
             r_dm_wdata <= s_dm_if.wdata;
             r_dm_rw    <= s_dm_if.rw;
+        end
+
+        // Rotate priority away from whichever of A or B just went
+        if (w_done) begin
+            if      (w_busy_a) r_b_priority <= 1'b1;
+            else if (w_busy_b) r_b_priority <= 1'b0;
         end
     end
 end
@@ -165,9 +213,11 @@ end
 // Output
 // ============================================================
 
-assign s_cpu_if.wait_req = (r_state == S_HOLD_CPU) ? granted_if.wait_req : 1'b1;
+assign s_a_if.wait_req   = (r_state == S_HOLD_A)   ? granted_if.wait_req : 1'b1;
+assign s_b_if.wait_req   = (r_state == S_HOLD_B)   ? granted_if.wait_req : 1'b1;
 assign s_dm_if.wait_req  = (r_state == S_HOLD_DM)  ? granted_if.wait_req : 1'b1;
-assign s_cpu_if.err      = (r_state == S_HOLD_CPU) ? granted_if.err : 1'b0;
+assign s_a_if.err        = (r_state == S_HOLD_A)   ? granted_if.err : 1'b0;
+assign s_b_if.err        = (r_state == S_HOLD_B)   ? granted_if.err : 1'b0;
 assign s_dm_if.err       = (r_state == S_HOLD_DM)  ? granted_if.err : 1'b0;
 
 always_comb begin
@@ -176,27 +226,35 @@ always_comb begin
     granted_if.wdata = '0;
     granted_if.rw    = RW_IDLE;
 
-    if (w_busy_cpu) begin
-        granted_if.addr  = w_take_cpu ? s_cpu_if.addr  : r_cpu_addr;
-        granted_if.size  = w_take_cpu ? s_cpu_if.size  : r_cpu_size;
-        granted_if.wdata = w_take_cpu ? s_cpu_if.wdata : r_cpu_wdata;
-        granted_if.rw    = w_take_cpu ? s_cpu_if.rw    : r_cpu_rw;
-
-    end else if (w_busy_dm) begin
+    if (w_busy_dm) begin
         granted_if.addr  = w_take_dm ? s_dm_if.addr  : r_dm_addr;
         granted_if.size  = w_take_dm ? s_dm_if.size  : r_dm_size;
         granted_if.wdata = w_take_dm ? s_dm_if.wdata : r_dm_wdata;
         granted_if.rw    = w_take_dm ? s_dm_if.rw    : r_dm_rw;
 
+    end else if (w_busy_a) begin
+        granted_if.addr  = w_take_a ? s_a_if.addr  : r_a_addr;
+        granted_if.size  = w_take_a ? s_a_if.size  : r_a_size;
+        granted_if.wdata = w_take_a ? s_a_if.wdata : r_a_wdata;
+        granted_if.rw    = w_take_a ? s_a_if.rw    : r_a_rw;
+
+    end else if (w_busy_b) begin
+        granted_if.addr  = w_take_b ? s_b_if.addr  : r_b_addr;
+        granted_if.size  = w_take_b ? s_b_if.size  : r_b_size;
+        granted_if.wdata = w_take_b ? s_b_if.wdata : r_b_wdata;
+        granted_if.rw    = w_take_b ? s_b_if.rw    : r_b_rw;
+
     end
 end
 
-assign s_cpu_if.rdata = granted_if.rdata;
+assign s_a_if.rdata   = granted_if.rdata;
+assign s_b_if.rdata   = granted_if.rdata;
 assign s_dm_if.rdata  = granted_if.rdata;
 
 // Bursts are not supported through the hub
 assign granted_if.burst_en  = 1'b0;
-assign s_cpu_if.beat_valid  = 1'b0;
+assign s_a_if.beat_valid    = 1'b0;
+assign s_b_if.beat_valid    = 1'b0;
 assign s_dm_if.beat_valid   = 1'b0;
 
 // ============================================================
