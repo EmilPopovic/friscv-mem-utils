@@ -31,8 +31,13 @@ module friscv_ocm_llc import friscv_mem_pkg::*; #(
     output logic            rd_miss_o, // cacheable read access missed in cache
     output logic            wr_acc_o,  // cacheable write access accepted
 
-    friscv_mem_if.slave     s_mem_if,  // From the hub: OCM region and cacheable region
-    friscv_mem_if.master    m_mem_if   // To external memory
+    // From the hub: OCM region and cacheable region
+    input  friscv_mem_req_t s_req_i,
+    output friscv_mem_rsp_t s_rsp_o,
+
+    // To external memory
+    output friscv_mem_req_t m_req_o,
+    input  friscv_mem_rsp_t m_rsp_i
 );
 
 localparam int unsigned Sets      = OcmSizeBytes / (LineBytes * Ways);
@@ -94,7 +99,8 @@ friscv_to_mem #(
     .err_i       ( w_err    ),
     .other_err_i ( 1'b0     ),
     .rdata_i     ( w_rdata  ),
-    .s_mem       ( s_mem_if )
+    .s_req_i     ( s_req_i  ),
+    .s_rsp_o     ( s_rsp_o  )
 );
 
 // ============================================================
@@ -102,8 +108,8 @@ friscv_to_mem #(
 // ============================================================
 
 logic w_match_cached, w_match_ocm;
-assign w_match_cached = (w_addr - addr_t'(CachedBase)) < (addr_t'(1) << CachedLog2);
-assign w_match_ocm    = (w_addr - addr_t'(OcmBase)) < addr_t'(OcmSizeBytes);
+assign w_match_cached = (w_addr - CachedBase) < (32'd1 << CachedLog2);
+assign w_match_ocm    = (w_addr - OcmBase) < OcmSizeBytes;
 
 // If regions overlap, OCM takes priority
 logic w_sel_ocm, w_sel_cached;
@@ -398,7 +404,7 @@ end
 logic [BeatW-1:0] r_beat;
 logic             r_refill_err;
 
-assign w_refill_err = (r_state == S_LLC_REFILL) && (r_refill_err || m_mem_if.err);
+assign w_refill_err = (r_state == S_LLC_REFILL) && (r_refill_err || m_rsp_i.err);
 
 always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
@@ -411,8 +417,8 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
         r_refill_err <= 1'b0;
         r_victim     <= w_victim;
     end else if (r_state == S_LLC_REFILL) begin
-        if (m_mem_if.beat_valid) r_beat <= r_beat + 1'b1;
-        if (m_mem_if.err)        r_refill_err <= 1'b1;
+        if (m_rsp_i.beat) r_beat       <= r_beat + 1'b1;
+        if (m_rsp_i.err)  r_refill_err <= 1'b1;
     end
 end
 
@@ -422,23 +428,24 @@ end
 
 logic w_dn_req;
 assign w_dn_req  = (r_state == S_LLC_FWD) || (r_state == S_LLC_REFILL);
-assign w_dn_done = w_dn_req && !m_mem_if.wait_req;
+assign w_dn_done = w_dn_req && !m_rsp_i.stall;
 
 always_comb begin
-    m_mem_if.addr     = w_addr;
-    m_mem_if.size     = s_mem_if.size;
-    m_mem_if.wdata    = w_wdata;
-    m_mem_if.rw       = RW_IDLE;
-    m_mem_if.burst_en = 1'b0;
+    m_req_o       = MEM_REQ_IDLE;
+    m_req_o.addr  = w_addr;
+    m_req_o.size  = s_req_i.size;
+    m_req_o.wdata = w_wdata;
 
     if (r_state == S_LLC_REFILL) begin
-        m_mem_if.addr     = {w_addr[31:OffsetW], {OffsetW{1'b0}}};
-        m_mem_if.size     = WIDTH_I32;
-        m_mem_if.wdata    = '0;
-        m_mem_if.rw       = RW_READ;
-        m_mem_if.burst_en = 1'b1;
+        m_req_o.addr  = {w_addr[31:OffsetW], {OffsetW{1'b0}}};
+        m_req_o.size  = SIZE_WORD;
+        m_req_o.wdata = '0;
+        m_req_o.en    = 1'b1;
+        m_req_o.wr    = 1'b0;
+        m_req_o.burst = 1'b1;
     end else if (r_state == S_LLC_FWD) begin
-        m_mem_if.rw       = w_we ? RW_WRITE : RW_READ;
+        m_req_o.en    = 1'b1;
+        m_req_o.wr    = w_we;
     end
 end
 
@@ -457,7 +464,7 @@ always_comb begin
     endcase
 end
 
-data_t w_hit_rdata;
+logic [31:0] w_hit_rdata;
 always_comb begin
     w_hit_rdata = '0;
     for (int unsigned i = 0; i < Ways; i++) begin
@@ -465,8 +472,8 @@ always_comb begin
     end
 end
 
-data_t r_rsp_rdata;
-logic  r_rsp_sel;
+logic [31:0] r_rsp_rdata;
+logic        r_rsp_sel;
 
 always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
@@ -478,9 +485,9 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
         w_rvalid <= w_req && w_gnt;
         if (w_req && w_gnt) begin
             r_rsp_sel   <= (r_state != S_LLC_IDLE);
-            r_rsp_rdata <= (r_state == S_LLC_LOOKUP) ? w_hit_rdata : m_mem_if.rdata;
+            r_rsp_rdata <= (r_state == S_LLC_LOOKUP) ? w_hit_rdata : m_rsp_i.rdata;
             w_err       <= (r_state == S_LLC_IDLE) ? w_illegal_ocm_access :
-                           (r_state == S_LLC_FWD)  ? m_mem_if.err : w_refill_err;
+                           (r_state == S_LLC_FWD)  ? m_rsp_i.err : w_refill_err;
         end
     end
 end
@@ -501,7 +508,7 @@ assign w_illegal_ocm_access = w_sel_ocm && llcsel_i[w_ocm_way_sel];
 // A write hit updates the line in place only once the external write has been accepted
 logic w_write_hit;
 assign w_write_hit = (r_state == S_LLC_FWD) && w_we && w_sel_cached &&
-                     w_dn_done && !m_mem_if.err;
+                     w_dn_done && !m_rsp_i.err;
 
 always_comb begin
     for (int unsigned i = 0; i < Ways; i++) begin
@@ -513,11 +520,11 @@ always_comb begin
 
         if (llcsel_i[i]) begin
             if (r_state == S_LLC_REFILL) begin
-                if (r_victim == WaySelW'(i) && m_mem_if.beat_valid) begin
+                if (r_victim == WaySelW'(i) && m_rsp_i.beat) begin
                     w_way_req  [i] = 1'b1;
                     w_way_addr [i] = {w_idx, r_beat};
                     w_way_we   [i] = 1'b1;
-                    w_way_wdata[i] = m_mem_if.rdata;
+                    w_way_wdata[i] = m_rsp_i.rdata;
                     w_way_be   [i] = '1;
                 end
             end else if (w_lookup_en) begin

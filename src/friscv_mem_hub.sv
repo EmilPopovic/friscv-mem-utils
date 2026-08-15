@@ -12,9 +12,9 @@
  * Arbitrates three subordinate ports onto the switchable OCM/LLC block and the
  * system bus, decoding the target from the granted address.
  *
- * s_a_if and s_b_if are symmetric, the hub attaches no meaning to
- * either one and rotates priority between them on every completed transaction.
- * s_dm_if takes priority over both.
+ * Ports A and B are symmetric, the hub attaches no meaning to either one and
+ * rotates priority between them on every completed transaction.
+ * The DM port takes priority over both.
  */
 
 module friscv_mem_hub import friscv_mem_pkg::*; #(
@@ -31,11 +31,25 @@ module friscv_mem_hub import friscv_mem_pkg::*; #(
     input  logic            clk_i,
     input  logic            rst_ni,
 
-    friscv_mem_if.slave     s_a_if,    // Symmetric port A
-    friscv_mem_if.slave     s_b_if,    // Symmetric port B
-    friscv_mem_if.slave     s_dm_if,   // Priority port
-    friscv_mem_if.master    m_ext_if,  // To downstream
-    friscv_mem_if.master    m_sys_if,  // To SoC
+    // Symmetric port A
+    input  friscv_mem_req_t s_a_req_i,
+    output friscv_mem_rsp_t s_a_rsp_o,
+
+    // Symmetric port B
+    input  friscv_mem_req_t s_b_req_i,
+    output friscv_mem_rsp_t s_b_rsp_o,
+
+    // Priority port
+    input  friscv_mem_req_t s_dm_req_i,
+    output friscv_mem_rsp_t s_dm_rsp_o,
+
+    // To downstream
+    output friscv_mem_req_t m_ext_req_o,
+    input  friscv_mem_rsp_t m_ext_rsp_i,
+
+    // To the SoC
+    output friscv_mem_req_t m_sys_req_o,
+    input  friscv_mem_rsp_t m_sys_rsp_i,
 
     input  logic [Ways-1:0] llcsel_i,
     input  logic            crpsel_i,
@@ -65,7 +79,8 @@ if (CachedBase < ExtBase || (65'(CachedBase) + 65'(CachedSize)) > (65'(ExtBase) 
     $fatal(1, "the cacheable window (%0x + %0x) must lie inside the external region (%0x + %0x)", CachedBase, CachedSize, ExtBase, ExtSize);
 end
 
-friscv_mem_if granted_if ();
+friscv_mem_req_t granted_req;
+friscv_mem_rsp_t granted_rsp;
 
 // ============================================================
 // Arbitration
@@ -82,18 +97,8 @@ state_t r_state, w_next_state;
 
 logic r_b_priority;
 
-addr_t      r_a_addr;
-mem_width_e r_a_size;
-data_t      r_a_wdata;
-rw_cmd_e    r_a_rw;
-addr_t      r_b_addr;
-mem_width_e r_b_size;
-data_t      r_b_wdata;
-rw_cmd_e    r_b_rw;
-addr_t      r_dm_addr;
-mem_width_e r_dm_size;
-data_t      r_dm_wdata;
-rw_cmd_e    r_dm_rw;
+// Frozen copy of a request that has to be held for more than one cycle
+friscv_mem_req_t r_a_req, r_b_req, r_dm_req;
 
 // ============================================================
 // Issue selection
@@ -102,9 +107,9 @@ rw_cmd_e    r_dm_rw;
 logic w_take_a, w_take_b, w_take_dm, w_take_any;
 
 logic w_a_en, w_b_en, w_dm_en;
-assign w_a_en  = s_a_if.rw  != RW_IDLE;
-assign w_b_en  = s_b_if.rw  != RW_IDLE;
-assign w_dm_en = s_dm_if.rw != RW_IDLE;
+assign w_a_en  = s_a_req_i.en;
+assign w_b_en  = s_b_req_i.en;
+assign w_dm_en = s_dm_req_i.en;
 
 always_comb begin
     w_take_a  = 1'b0;
@@ -137,7 +142,7 @@ logic w_park;
 assign w_park = w_take_any;
 
 logic w_done;
-assign w_done = (r_state != S_IDLE) & ~granted_if.wait_req;
+assign w_done = (r_state != S_IDLE) & ~granted_rsp.stall;
 
 // ============================================================
 // Next state
@@ -153,7 +158,7 @@ always_comb begin
                     end
         S_HOLD_A,
         S_HOLD_B,
-        S_HOLD_DM:  if (!granted_if.wait_req) w_next_state = S_IDLE;
+        S_HOLD_DM:  if (!granted_rsp.stall) w_next_state = S_IDLE;
         default:    w_next_state = S_IDLE;
     endcase
 end
@@ -166,40 +171,16 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
         r_state      <= S_IDLE;
         r_b_priority <= 1'b0;
-        r_a_addr     <= '0;
-        r_a_size     <= WIDTH_I32;
-        r_a_wdata    <= '0;
-        r_a_rw       <= RW_IDLE;
-        r_b_addr     <= '0;
-        r_b_size     <= WIDTH_I32;
-        r_b_wdata    <= '0;
-        r_b_rw       <= RW_IDLE;
-        r_dm_addr    <= '0;
-        r_dm_size    <= WIDTH_I32;
-        r_dm_wdata   <= '0;
-        r_dm_rw      <= RW_IDLE;
+        r_a_req      <= MEM_REQ_IDLE;
+        r_b_req      <= MEM_REQ_IDLE;
+        r_dm_req     <= MEM_REQ_IDLE;
     end else begin
         r_state <= w_next_state;
 
         // Freeze the request if it is going to be held
-        if (w_park && w_take_a) begin
-            r_a_addr  <= s_a_if.addr;
-            r_a_size  <= s_a_if.size;
-            r_a_wdata <= s_a_if.wdata;
-            r_a_rw    <= s_a_if.rw;
-        end
-        if (w_park && w_take_b) begin
-            r_b_addr  <= s_b_if.addr;
-            r_b_size  <= s_b_if.size;
-            r_b_wdata <= s_b_if.wdata;
-            r_b_rw    <= s_b_if.rw;
-        end
-        if (w_park && w_take_dm) begin
-            r_dm_addr  <= s_dm_if.addr;
-            r_dm_size  <= s_dm_if.size;
-            r_dm_wdata <= s_dm_if.wdata;
-            r_dm_rw    <= s_dm_if.rw;
-        end
+        if (w_park && w_take_a)  r_a_req  <= s_a_req_i;
+        if (w_park && w_take_b)  r_b_req  <= s_b_req_i;
+        if (w_park && w_take_dm) r_dm_req <= s_dm_req_i;
 
         // Rotate priority away from whichever of A or B just went
         if (w_done) begin
@@ -213,75 +194,57 @@ end
 // Output
 // ============================================================
 
-assign s_a_if.wait_req   = (r_state == S_HOLD_A)   ? granted_if.wait_req : 1'b1;
-assign s_b_if.wait_req   = (r_state == S_HOLD_B)   ? granted_if.wait_req : 1'b1;
-assign s_dm_if.wait_req  = (r_state == S_HOLD_DM)  ? granted_if.wait_req : 1'b1;
-assign s_a_if.err        = (r_state == S_HOLD_A)   ? granted_if.err : 1'b0;
-assign s_b_if.err        = (r_state == S_HOLD_B)   ? granted_if.err : 1'b0;
-assign s_dm_if.err       = (r_state == S_HOLD_DM)  ? granted_if.err : 1'b0;
-
+// Bursts are not supported through the hub, so beat is never raised
 always_comb begin
-    granted_if.addr  = '0;
-    granted_if.size  = WIDTH_I32;
-    granted_if.wdata = '0;
-    granted_if.rw    = RW_IDLE;
+    s_a_rsp_o       = '0;
+    s_a_rsp_o.rdata = granted_rsp.rdata;
+    s_a_rsp_o.stall = (r_state == S_HOLD_A) ? granted_rsp.stall : 1'b1;
+    s_a_rsp_o.err   = (r_state == S_HOLD_A) ? granted_rsp.err   : 1'b0;
 
-    if (w_busy_dm) begin
-        granted_if.addr  = w_take_dm ? s_dm_if.addr  : r_dm_addr;
-        granted_if.size  = w_take_dm ? s_dm_if.size  : r_dm_size;
-        granted_if.wdata = w_take_dm ? s_dm_if.wdata : r_dm_wdata;
-        granted_if.rw    = w_take_dm ? s_dm_if.rw    : r_dm_rw;
+    s_b_rsp_o       = '0;
+    s_b_rsp_o.rdata = granted_rsp.rdata;
+    s_b_rsp_o.stall = (r_state == S_HOLD_B) ? granted_rsp.stall : 1'b1;
+    s_b_rsp_o.err   = (r_state == S_HOLD_B) ? granted_rsp.err   : 1'b0;
 
-    end else if (w_busy_a) begin
-        granted_if.addr  = w_take_a ? s_a_if.addr  : r_a_addr;
-        granted_if.size  = w_take_a ? s_a_if.size  : r_a_size;
-        granted_if.wdata = w_take_a ? s_a_if.wdata : r_a_wdata;
-        granted_if.rw    = w_take_a ? s_a_if.rw    : r_a_rw;
-
-    end else if (w_busy_b) begin
-        granted_if.addr  = w_take_b ? s_b_if.addr  : r_b_addr;
-        granted_if.size  = w_take_b ? s_b_if.size  : r_b_size;
-        granted_if.wdata = w_take_b ? s_b_if.wdata : r_b_wdata;
-        granted_if.rw    = w_take_b ? s_b_if.rw    : r_b_rw;
-
-    end
+    s_dm_rsp_o       = '0;
+    s_dm_rsp_o.rdata = granted_rsp.rdata;
+    s_dm_rsp_o.stall = (r_state == S_HOLD_DM) ? granted_rsp.stall : 1'b1;
+    s_dm_rsp_o.err   = (r_state == S_HOLD_DM) ? granted_rsp.err   : 1'b0;
 end
 
-assign s_a_if.rdata   = granted_if.rdata;
-assign s_b_if.rdata   = granted_if.rdata;
-assign s_dm_if.rdata  = granted_if.rdata;
+always_comb begin
+    granted_req = MEM_REQ_IDLE;
 
-// Bursts are not supported through the hub
-assign granted_if.burst_en  = 1'b0;
-assign s_a_if.beat_valid    = 1'b0;
-assign s_b_if.beat_valid    = 1'b0;
-assign s_dm_if.beat_valid   = 1'b0;
+    if      (w_busy_dm) granted_req = w_take_dm ? s_dm_req_i : r_dm_req;
+    else if (w_busy_a)  granted_req = w_take_a  ? s_a_req_i  : r_a_req;
+    else if (w_busy_b)  granted_req = w_take_b  ? s_b_req_i  : r_b_req;
+
+    // Bursts are not supported through the hub
+    granted_req.burst = 1'b0;
+end
 
 // ============================================================
 // Demux to the OCM/LLC block and the SoC
 // ============================================================
 
-friscv_mem_if llc_if ();
+friscv_mem_req_t llc_req;
+friscv_mem_rsp_t llc_rsp;
 
 logic w_match_ext, w_match_sram;
-assign w_match_ext  = (granted_if.addr - addr_t'(ExtBase)) < addr_t'(ExtSize);
-assign w_match_sram = (granted_if.addr - addr_t'(OcmBase)) < addr_t'(OcmSize);
+assign w_match_ext  = (granted_req.addr - ExtBase) < ExtSize;
+assign w_match_sram = (granted_req.addr - OcmBase) < OcmSize;
 
 logic w_sel_llc, w_sel_sys;
 assign w_sel_llc = w_match_ext || w_match_sram;
 assign w_sel_sys = !w_sel_llc;
 
-assign llc_if.addr       = granted_if.addr;
-assign llc_if.size       = granted_if.size;
-assign llc_if.wdata      = granted_if.wdata;
-assign llc_if.rw         = w_sel_llc ? granted_if.rw : RW_IDLE;
-assign llc_if.burst_en   = 1'b0;
+always_comb begin
+    llc_req    = granted_req;
+    llc_req.en = granted_req.en && w_sel_llc;
 
-assign m_sys_if.addr     = granted_if.addr;
-assign m_sys_if.size     = granted_if.size;
-assign m_sys_if.wdata    = granted_if.wdata;
-assign m_sys_if.rw       = w_sel_sys ? granted_if.rw : RW_IDLE;
-assign m_sys_if.burst_en = 1'b0;
+    m_sys_req_o    = granted_req;
+    m_sys_req_o.en = granted_req.en && w_sel_sys;
+end
 
 logic r_sel_llc;
 always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -289,10 +252,7 @@ always_ff @(posedge clk_i or negedge rst_ni) begin
     else if (w_take_any) r_sel_llc <= w_sel_llc;
 end
 
-assign granted_if.rdata      = r_sel_llc ? llc_if.rdata      : m_sys_if.rdata;
-assign granted_if.wait_req   = r_sel_llc ? llc_if.wait_req   : m_sys_if.wait_req;
-assign granted_if.err        = r_sel_llc ? llc_if.err        : m_sys_if.err;
-assign granted_if.beat_valid = r_sel_llc ? llc_if.beat_valid : m_sys_if.beat_valid;
+assign granted_rsp = r_sel_llc ? llc_rsp : m_sys_rsp_i;
 
 // ============================================================
 // Switchable OCM/LLC block
@@ -315,8 +275,10 @@ friscv_ocm_llc #(
     .rd_acc_o,
     .rd_miss_o,
     .wr_acc_o,
-    .s_mem_if ( llc_if   ),
-    .m_mem_if ( m_ext_if )
+    .s_req_i ( llc_req     ),
+    .s_rsp_o ( llc_rsp     ),
+    .m_req_o ( m_ext_req_o ),
+    .m_rsp_i ( m_ext_rsp_i )
 );
 
 endmodule

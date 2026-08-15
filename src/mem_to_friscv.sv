@@ -9,25 +9,26 @@
 // Emil Popović <mail@emilpopovic.me>
 
 /*
- * Bridge between Pulp mem master port and a friscv_mem_if master interface.
+ * Bridge between a Pulp mem master port and a FRISC-V memory manager port.
  */
 
 module mem_to_friscv import friscv_mem_pkg::*; (
-    input  logic         clk_i,
-    input  logic         rst_ni,
+    input  logic            clk_i,
+    input  logic            rst_ni,
 
-    input  logic         req_i,
-    input  addr_t        addr_i,
-    input  logic         we_i,
-    input  data_t        wdata_i,
-    input  logic [3:0]   be_i,
-    output logic         gnt_o,
-    output logic         rvalid_o,
-    output logic         err_o,
-    output logic         other_err_o,
-    output data_t        rdata_o,
+    input  logic            req_i,
+    input  logic [31:0]     addr_i,
+    input  logic            we_i,
+    input  logic [31:0]     wdata_i,
+    input  logic [3:0]      be_i,
+    output logic            gnt_o,
+    output logic            rvalid_o,
+    output logic            err_o,
+    output logic            other_err_o,
+    output logic [31:0]     rdata_o,
 
-    friscv_mem_if.master m_mem
+    output friscv_mem_req_t m_req_o,
+    input  friscv_mem_rsp_t m_rsp_i
 );
 
 typedef enum logic {
@@ -38,30 +39,24 @@ typedef enum logic {
 state_e state_q, state_d;
 
 // Latched transaction fields
-addr_t      addr_q;
-data_t      wdata_q;
-logic [3:0] be_q;
-logic       we_q;
+logic [31:0] addr_q;
+logic [31:0] wdata_q;
+logic [3:0]  be_q;
+logic        we_q;
 
 // The DM aligns be to the address, so the access width is its population
 // count; the byte offset is re-derived from the address downstream.
-mem_width_e size;
+logic [1:0] size;
 always_comb begin
     case (be_q)
-        4'b0001, 4'b0010, 4'b0100, 4'b1000: size = WIDTH_U8;
-        4'b0011, 4'b1100:                   size = WIDTH_U16;
-        default:                            size = WIDTH_I32;
+        4'b0001, 4'b0010, 4'b0100, 4'b1000: size = SIZE_BYTE;
+        4'b0011, 4'b1100:                   size = SIZE_HALF;
+        default:                            size = SIZE_WORD;
     endcase
 end
 
-// Constant request fields
-assign m_mem.addr     = addr_q;
-assign m_mem.size     = size;
-assign m_mem.wdata    = wdata_q;
-assign m_mem.burst_en = 1'b0;
-
 // Read data / errors returned to the DM
-assign rdata_o     = m_mem.rdata;
+assign rdata_o     = m_rsp_i.rdata;
 assign other_err_o = 1'b0;
 
 always_comb begin
@@ -71,7 +66,12 @@ always_comb begin
     rvalid_o = 1'b0;
     err_o    = 1'b0;
 
-    m_mem.rw = RW_IDLE;
+    // Constant request fields. en is raised only while the transfer is live.
+    m_req_o       = MEM_REQ_IDLE;
+    m_req_o.addr  = addr_q;
+    m_req_o.size  = size;
+    m_req_o.wdata = wdata_q;
+    m_req_o.wr    = we_q;
 
     case (state_q)
         S_IDLE: begin
@@ -80,10 +80,10 @@ always_comb begin
         end
 
         S_BUSY: begin
-            m_mem.rw = we_q ? RW_WRITE : RW_READ;
-            if (!m_mem.wait_req) begin
+            m_req_o.en = 1'b1;
+            if (!m_rsp_i.stall) begin
                 rvalid_o = 1'b1;
-                err_o    = m_mem.err;
+                err_o    = m_rsp_i.err;
                 state_d  = S_IDLE;
             end
         end

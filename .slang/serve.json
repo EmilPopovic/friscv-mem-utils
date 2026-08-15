@@ -1,0 +1,13 @@
+{
+  "flags": "--timescale 1ns/1ps -Wno-duplicate-definition --suppress-warnings .bender/... -Weverything",
+  "build": ".slang/sources.f",
+  "index": [
+    {
+      "dirs": [
+        "src",
+        ".bender/git/checkouts"
+      ],
+      "excludeDirs": ["build"]
+    }
+  ]
+}

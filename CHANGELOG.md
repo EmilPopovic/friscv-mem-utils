@@ -1,3 +1,5 @@
+<!-- markdownlint-disable MD024 -->
+
 # Changelog
 
 All notable changes to this project are documented in this file.
@@ -6,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [4.0.0] - 2026-08-16
+
+### Added
+
+- Add `friscv_mem_pkg`. `friscv_mem_if` transformed into these struct types.
+
+### Changed
+
+- **Breaking:** No dependency on `friscv-mem-if`, everything uses struct types in `friscv_mem_pkg`.
+
+- **Breaking:** Every `friscv_mem_if` port is now a `friscv_mem_req_t` / `friscv_mem_rsp_t` struct pair.
+- **Breaking:** `friscv_to_axi4_full` drives a PULP `axi_req_t` / `axi_rsp_t` struct pair instead of flat signals.
+
+### Removed
+
+- **Breaking:** Remove `friscv_to_axi4_full_intf.sv`. Since the core adapter is not flat, this module is not needed.
 
 ## [3.0.0] - 2026-08-14
 

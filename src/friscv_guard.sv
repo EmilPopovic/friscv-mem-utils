@@ -14,30 +14,28 @@
  */
 
 module friscv_guard import friscv_mem_pkg::*; (
-    input  logic         en_i,
-    friscv_mem_if.slave  s_mem,
-    friscv_mem_if.master m_mem
+    input  logic            en_i,
+
+    input  friscv_mem_req_t s_req_i,
+    output friscv_mem_rsp_t s_rsp_o,
+
+    output friscv_mem_req_t m_req_o,
+    input  friscv_mem_rsp_t m_rsp_i
 );
 
 always_comb begin
     // Request path
-    m_mem.addr     = s_mem.addr;
-    m_mem.size     = s_mem.size;
-    m_mem.wdata    = s_mem.wdata;
-    m_mem.burst_en = s_mem.burst_en;
-    m_mem.rw       = en_i ? s_mem.rw : RW_IDLE;
+    m_req_o    = s_req_i;
+    m_req_o.en = en_i && s_req_i.en;
 
     // Response path
     if (en_i) begin
-        s_mem.rdata      = m_mem.rdata;
-        s_mem.wait_req   = m_mem.wait_req;
-        s_mem.beat_valid = m_mem.beat_valid;
-        s_mem.err        = m_mem.err;
+        s_rsp_o = m_rsp_i;
     end else begin
-        s_mem.rdata      = '0;
-        s_mem.wait_req   = 1'b0;
-        s_mem.beat_valid = 1'b0;
-        s_mem.err        = (s_mem.rw != RW_IDLE);
+        s_rsp_o.rdata = '0;
+        s_rsp_o.stall = 1'b0;
+        s_rsp_o.beat  = 1'b0;
+        s_rsp_o.err   = s_req_i.en;
     end
 end
 

@@ -1,6 +1,6 @@
 # FRISC-V Memory Utilities
 
-This repo contains reusable memory modules and protocol converters for working with the FRISC-V memory interface (`friscv_mem_if`).
+This repo contains reusable memory modules and protocol converters for working with the FRISC-V memory protocol (`friscv_mem_req_t` and `friscv_mem_rsp_t`, defined in `friscv_mem_pkg`).
 
 **Included functional modules:**
 
@@ -9,7 +9,7 @@ This repo contains reusable memory modules and protocol converters for working w
 
 **Included protocol converters:**
 
-- FRISC-V -> AXI4 Full (PULP interface and flat) - `friscv_to_axi4_full_intf.sv`, `friscv_to_axi4_full.sv`
+- FRISC-V -> AXI4 Full (PULP `axi_req_t` / `axi_rsp_t`) - `friscv_to_axi4_full.sv`
 - FRISC-V **(no burst)** -> PULP MEM - `friscv_to_mem.sv`
 - FRISC-V **(no burst)** -> FER-V SysBus - `friscv_to_sysbus.sv`
 - PULP MEM -> FRISC-V **(no burst)** - `mem_to_friscv.sv`
