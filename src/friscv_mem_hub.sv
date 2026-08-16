@@ -17,7 +17,9 @@
  * The DM port takes priority over both.
  */
 
-module friscv_mem_hub import friscv_mem_pkg::*; #(
+module friscv_mem_hub
+    import friscv_mem_pkg::*;
+#(
     parameter int unsigned ExtBase    = 32'h8000_0000,
     parameter int unsigned ExtSize    = 32'h8000_0000,
     parameter int unsigned CachedBase = ExtBase,
@@ -26,7 +28,8 @@ module friscv_mem_hub import friscv_mem_pkg::*; #(
     parameter int unsigned OcmSize    = 32'h0100_0000,
     parameter int unsigned LineBytes  = 64,
     parameter int unsigned Ways       = 4,
-    parameter bit          SramTags   = 1'b1
+    parameter bit          SramTags   = 1'b1,
+    parameter bit          OcmOnly    = 1'b0
 ) (
     input  logic            clk_i,
     input  logic            rst_ni,
@@ -72,11 +75,16 @@ end
 if (OcmSize == 0 || OcmSize != 1 << $clog2(OcmSize)) begin : gen_chk_sram_size
     $fatal(1, "OcmSize must be a power of 2, got %0x", OcmSize);
 end
-if (CachedSize == 0 || CachedSize != 1 << $clog2(CachedSize)) begin : gen_chk_cache_size
+if (!OcmOnly &&
+    (CachedSize == 0 || CachedSize != 1 << $clog2(CachedSize))) begin : gen_chk_cache_size
     $fatal(1, "CachedSize must be a power of 2, got %0x", CachedSize);
 end
-if (CachedBase < ExtBase || (65'(CachedBase) + 65'(CachedSize)) > (65'(ExtBase) + 65'(ExtSize))) begin : gen_chk_cache_window
-    $fatal(1, "the cacheable window (%0x + %0x) must lie inside the external region (%0x + %0x)", CachedBase, CachedSize, ExtBase, ExtSize);
+if (!OcmOnly &&
+    (CachedBase < ExtBase ||
+     (65'(CachedBase) + 65'(CachedSize)) > (65'(ExtBase) + 65'(ExtSize)))
+   ) begin : gen_chk_cache_window
+    $fatal(1, "the cacheable window (%0x + %0x) must lie inside the external region (%0x + %0x)",
+           CachedBase, CachedSize, ExtBase, ExtSize);
 end
 
 friscv_mem_req_t granted_req;
@@ -224,61 +232,143 @@ always_comb begin
 end
 
 // ============================================================
-// Demux to the OCM/LLC block and the SoC
+// Demux to the OCM block, the external memory and the SoC
 // ============================================================
 
-friscv_mem_req_t llc_req;
-friscv_mem_rsp_t llc_rsp;
+friscv_mem_req_t ocm_req;
+friscv_mem_rsp_t ocm_rsp;
 
-logic w_match_ext, w_match_sram;
-assign w_match_ext  = (granted_req.addr - ExtBase) < ExtSize;
-assign w_match_sram = (granted_req.addr - OcmBase) < OcmSize;
+logic w_match_ext, w_match_ocm;
+assign w_match_ext = (granted_req.addr - ExtBase) < ExtSize;
+assign w_match_ocm = (granted_req.addr - OcmBase) < OcmSize;
 
-logic w_sel_llc, w_sel_sys;
-assign w_sel_llc = w_match_ext || w_match_sram;
-assign w_sel_sys = !w_sel_llc;
+logic w_sel_ocm, w_sel_ext, w_sel_sys;
+assign w_sel_ocm = w_match_ocm;
+assign w_sel_ext = w_match_ext && !w_match_ocm;
+assign w_sel_sys = !w_match_ocm && !w_match_ext;
+
+logic w_sel_blk;
+assign w_sel_blk = OcmOnly ? w_sel_ocm : (w_sel_ocm || w_sel_ext);
 
 always_comb begin
-    llc_req    = granted_req;
-    llc_req.en = granted_req.en && w_sel_llc;
+    ocm_req    = granted_req;
+    ocm_req.en = granted_req.en && w_sel_blk;
 
     m_sys_req_o    = granted_req;
     m_sys_req_o.en = granted_req.en && w_sel_sys;
 end
 
-logic r_sel_llc;
+typedef enum logic [1:0] {
+    T_SYS,
+    T_BLK,
+    T_EXT
+} target_t;
+
+target_t r_target;
 always_ff @(posedge clk_i or negedge rst_ni) begin
-    if (!rst_ni)         r_sel_llc <= 1'b0;
-    else if (w_take_any) r_sel_llc <= w_sel_llc;
+    if (!rst_ni)         r_target <= T_SYS;
+    else if (w_take_any) r_target <= w_sel_blk ? T_BLK : (w_sel_sys ? T_SYS : T_EXT);
 end
 
-assign granted_rsp = r_sel_llc ? llc_rsp : m_sys_rsp_i;
+always_comb begin
+    case (r_target)
+        T_BLK:   granted_rsp = ocm_rsp;
+        T_EXT:   granted_rsp = m_ext_rsp_i;
+        T_SYS:   granted_rsp = m_sys_rsp_i;
+        default: granted_rsp = m_sys_rsp_i;
+    endcase
+end
 
-// ============================================================
-// Switchable OCM/LLC block
-// ============================================================
+if (!OcmOnly) begin : gen_ocm_llc
 
-friscv_ocm_llc #(
-    .OcmBase      ( OcmBase            ),
-    .CachedBase   ( CachedBase         ),
-    .CachedLog2   ( $clog2(CachedSize) ),
-    .LineBytes    ( LineBytes          ),
-    .Ways         ( Ways               ),
-    .OcmSizeBytes ( OcmSize            ),
-    .SramTags     ( SramTags           )
-) ocm_llc (
-    .clk_i,
-    .rst_ni,
-    .crpsel_i,
-    .llcinv_i,
-    .llcsel_i,
-    .rd_acc_o,
-    .rd_miss_o,
-    .wr_acc_o,
-    .s_req_i ( llc_req     ),
-    .s_rsp_o ( llc_rsp     ),
-    .m_req_o ( m_ext_req_o ),
-    .m_rsp_i ( m_ext_rsp_i )
-);
+    friscv_ocm_llc #(
+        .OcmBase      ( OcmBase            ),
+        .CachedBase   ( CachedBase         ),
+        .CachedLog2   ( $clog2(CachedSize) ),
+        .LineBytes    ( LineBytes          ),
+        .Ways         ( Ways               ),
+        .OcmSizeBytes ( OcmSize            ),
+        .SramTags     ( SramTags           )
+    ) ocm_llc (
+        .clk_i,
+        .rst_ni,
+        .crpsel_i,
+        .llcinv_i,
+        .llcsel_i,
+        .rd_acc_o,
+        .rd_miss_o,
+        .wr_acc_o,
+        .s_req_i ( ocm_req     ),
+        .s_rsp_o ( ocm_rsp     ),
+        .m_req_o ( m_ext_req_o ),
+        .m_rsp_i ( m_ext_rsp_i )
+    );
+
+end else begin : gen_ocm_sram
+
+    localparam int unsigned OcmWords = OcmSize / 4;
+    localparam int unsigned OcmAddrW = $clog2(OcmWords);
+
+    if (OcmSize < 4) begin : gen_chk_ocm_size
+        $fatal(1, "OcmSize must hold at least one word, got %0x", OcmSize);
+    end
+
+    assign rd_acc_o  = 1'b0;
+    assign rd_miss_o = 1'b0;
+    assign wr_acc_o  = 1'b0;
+
+    always_comb begin
+        m_ext_req_o    = granted_req;
+        m_ext_req_o.en = granted_req.en && w_sel_ext;
+    end
+
+    logic        w_req, w_gnt, w_we, w_rvalid;
+    logic [31:0] w_addr, w_wdata, w_rdata;
+    logic [3:0]  w_be;
+
+    friscv_to_mem #(
+        .RegisterReq ( 1 )
+    ) to_mem (
+        .clk_i,
+        .rst_ni,
+        .req_o       ( w_req    ),
+        .addr_o      ( w_addr   ),
+        .we_o        ( w_we     ),
+        .wdata_o     ( w_wdata  ),
+        .be_o        ( w_be     ),
+        .gnt_i       ( w_gnt    ),
+        .rvalid_i    ( w_rvalid ),
+        .err_i       ( 1'b0     ),
+        .other_err_i ( 1'b0     ),
+        .rdata_i     ( w_rdata  ),
+        .s_req_i     ( ocm_req  ),
+        .s_rsp_o     ( ocm_rsp  )
+    );
+
+    assign w_gnt = w_req;
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin
+        if (!rst_ni) w_rvalid <= 1'b0;
+        else         w_rvalid <= w_req && w_gnt;
+    end
+
+    tc_sram #(
+        .NumWords  ( OcmWords ),
+        .DataWidth ( 32       ),
+        .ByteWidth ( 8        ),
+        .NumPorts  ( 1        ),
+        .Latency   ( 1        )
+    ) ocm_sram (
+        .clk_i,
+        .rst_ni,
+        .req_i   ( w_req                ),
+        .we_i    ( w_we                 ),
+        .addr_i  ( w_addr[OcmAddrW+1:2] ),
+        .wdata_i ( w_wdata              ),
+        .be_i    ( w_be                 ),
+        .rdata_o ( w_rdata              )
+    );
+
+end
 
 endmodule

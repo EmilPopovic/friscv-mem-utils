@@ -12,15 +12,15 @@
 
 package friscv_axi_pkg;
 
-    localparam int unsigned ID_WIDTH   = 1;
-    localparam int unsigned USER_WIDTH = 1;
+localparam int unsigned ID_WIDTH   = 1;
+localparam int unsigned USER_WIDTH = 1;
 
-    typedef logic [31:0]           addr_t;
-    typedef logic [31:0]           data_t;
-    typedef logic [3:0]            strb_t;
-    typedef logic [ID_WIDTH-1:0]   id_t;
-    typedef logic [USER_WIDTH-1:0] user_t;
+typedef logic [31:0]           addr_t;
+typedef logic [31:0]           data_t;
+typedef logic [3:0]            strb_t;
+typedef logic [ID_WIDTH-1:0]   id_t;
+typedef logic [USER_WIDTH-1:0] user_t;
 
-    `AXI_TYPEDEF_ALL(axi, addr_t, id_t, data_t, strb_t, user_t)
+`AXI_TYPEDEF_ALL(axi, addr_t, id_t, data_t, strb_t, user_t)
 
 endpackage

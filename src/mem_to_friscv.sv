@@ -12,7 +12,9 @@
  * Bridge between a Pulp mem master port and a FRISC-V memory manager port.
  */
 
-module mem_to_friscv import friscv_mem_pkg::*; (
+module mem_to_friscv
+    import friscv_mem_pkg::*;
+(
     input  logic            clk_i,
     input  logic            rst_ni,
 

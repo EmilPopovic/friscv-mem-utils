@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0]
+
+### Added
+
+- Add `OcmOnly` parameter to `friscv_mem_hub` which disables cache functionality.
+
+### Changed
+
+- Minor refactor.
+
 ## [4.0.0] - 2026-08-16
 
 ### Added

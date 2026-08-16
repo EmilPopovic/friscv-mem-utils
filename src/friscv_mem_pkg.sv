@@ -16,34 +16,34 @@
 
 package friscv_mem_pkg;
 
-    localparam logic [1:0] SIZE_BYTE = 2'b00;
-    localparam logic [1:0] SIZE_HALF = 2'b01;
-    localparam logic [1:0] SIZE_WORD = 2'b10;
+localparam logic [1:0] SIZE_BYTE = 2'b00;
+localparam logic [1:0] SIZE_HALF = 2'b01;
+localparam logic [1:0] SIZE_WORD = 2'b10;
 
-    typedef struct packed {
-        logic [31:0] addr;
-        logic [1:0]  size;  // 00: byte, 01: halfword, 10: word, 11: reserved
-        logic [31:0] wdata;
-        logic        en;
-        logic        wr;
-        logic        burst;
-    } friscv_mem_req_t;
+typedef struct packed {
+    logic [31:0] addr;
+    logic [1:0]  size;  // 00: byte, 01: halfword, 10: word, 11: reserved
+    logic [31:0] wdata;
+    logic        en;
+    logic        wr;
+    logic        burst;
+} friscv_mem_req_t;
 
-    typedef struct packed {
-        logic [31:0] rdata;
-        logic        stall;
-        logic        beat;
-        logic        err;
-    } friscv_mem_rsp_t;
+typedef struct packed {
+    logic [31:0] rdata;
+    logic        stall;
+    logic        beat;
+    logic        err;
+} friscv_mem_rsp_t;
 
-    // Idle request
-    localparam friscv_mem_req_t MEM_REQ_IDLE = '{
-        addr:  '0,
-        size:  SIZE_WORD,
-        wdata: '0,
-        en:    1'b0,
-        wr:    1'b0,
-        burst: 1'b0
-    };
+// Idle request
+localparam friscv_mem_req_t MEM_REQ_IDLE = '{
+    addr:  '0,
+    size:  SIZE_WORD,
+    wdata: '0,
+    en:    1'b0,
+    wr:    1'b0,
+    burst: 1'b0
+};
 
 endpackage

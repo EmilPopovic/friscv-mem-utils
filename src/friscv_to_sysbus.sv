@@ -8,7 +8,9 @@
 //
 // Emil Popović <mail@emilpopovic.me>
 
-module friscv_to_sysbus import friscv_mem_pkg::*; #(
+module friscv_to_sysbus
+    import friscv_mem_pkg::*;
+#(
     parameter type sys_req_t  = friscv_sysbus_pkg::sys_req_t,
     parameter type sys_resp_t = friscv_sysbus_pkg::sys_resp_t
 ) (

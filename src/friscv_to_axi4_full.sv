@@ -13,7 +13,9 @@
  * It supports single-beat and burst transactions of BurstLen beats, which can be configured as needed.
  */
 
-module friscv_to_axi4_full import friscv_mem_pkg::*; #(
+module friscv_to_axi4_full
+    import friscv_mem_pkg::*;
+#(
     parameter int unsigned BurstLen = 8,
     parameter type axi_req_t = friscv_axi_pkg::axi_req_t,
     parameter type axi_rsp_t = friscv_axi_pkg::axi_resp_t

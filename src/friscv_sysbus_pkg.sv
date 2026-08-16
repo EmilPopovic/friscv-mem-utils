@@ -11,16 +11,18 @@
 // Based on FER-V SysBus interface
 
 package friscv_sysbus_pkg;
-    typedef struct packed {
-        logic [31:0] addr;
-        logic [31:0] wdata;
-        logic [3:0]  we;
-        logic        en;
-    } sys_req_t;
 
-    typedef struct packed {
-        logic [31:0] rdata;
-        logic        rdy;
-        logic        err;
-    } sys_resp_t;
+typedef struct packed {
+    logic [31:0] addr;
+    logic [31:0] wdata;
+    logic [3:0]  we;
+    logic        en;
+} sys_req_t;
+
+typedef struct packed {
+    logic [31:0] rdata;
+    logic        rdy;
+    logic        err;
+} sys_resp_t;
+
 endpackage
