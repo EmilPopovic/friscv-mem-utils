@@ -5,7 +5,7 @@ This repo contains reusable memory modules and protocol converters for working w
 **Included functional modules:**
 
 - `friscv_ocm_llc.sv` - A per-way-configurable On Chip Memory / Last Level Cache.
-- `friscv_mem_hub.sv` - A two-port hub (for CPU and DM) splitting the bus between a cached (OCM/LLC) region and uncached System (SoC) region. Setting `OcmOnly` replaces the OCM/LLC with an SRAM block.
+- `friscv_mem_hub.sv` - A two-port hub (for CPU and DM) splitting the bus between a cached (OCM/LLC) region and uncached System (SoC) region. Setting `OcmOnly` replaces the OCM/LLC with an SRAM block. Clearing `EnableOcm` instantiates no SRAM.
 
 **Included protocol converters:**
 

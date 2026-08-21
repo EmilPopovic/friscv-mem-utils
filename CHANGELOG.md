@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-08-21
+
+### Added
+
+- Add `EnableOcm` parameter to `friscv_mem_hub`. When 0, no SRAM is instantiated, defaults to 1.
+
 ## [4.1.0] - 2026-08-17
 
 ### Added

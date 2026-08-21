@@ -29,7 +29,8 @@ module friscv_mem_hub
     parameter int unsigned LineBytes  = 64,
     parameter int unsigned Ways       = 4,
     parameter bit          SramTags   = 1'b1,
-    parameter bit          OcmOnly    = 1'b0
+    parameter bit          OcmOnly    = 1'b0,
+    parameter bit          EnableOcm  = 1'b1
 ) (
     input  logic            clk_i,
     input  logic            rst_ni,
@@ -75,16 +76,19 @@ end
 if (OcmSize == 0 || OcmSize != 1 << $clog2(OcmSize)) begin : gen_chk_sram_size
     $fatal(1, "OcmSize must be a power of 2, got %0x", OcmSize);
 end
-if (!OcmOnly &&
+if (!OcmOnly && EnableOcm &&
     (CachedSize == 0 || CachedSize != 1 << $clog2(CachedSize))) begin : gen_chk_cache_size
     $fatal(1, "CachedSize must be a power of 2, got %0x", CachedSize);
 end
-if (!OcmOnly &&
+if (!OcmOnly && EnableOcm &&
     (CachedBase < ExtBase ||
      (65'(CachedBase) + 65'(CachedSize)) > (65'(ExtBase) + 65'(ExtSize)))
    ) begin : gen_chk_cache_window
     $fatal(1, "the cacheable window (%0x + %0x) must lie inside the external region (%0x + %0x)",
            CachedBase, CachedSize, ExtBase, ExtSize);
+end
+if (OcmOnly && !EnableOcm) begin : gen_chk_ocm_en_consistent
+    $fatal(1, "OcmOnly is set but EnableOcm is not");
 end
 
 friscv_mem_req_t granted_req;
@@ -248,7 +252,7 @@ assign w_sel_ext = w_match_ext && !w_match_ocm;
 assign w_sel_sys = !w_match_ocm && !w_match_ext;
 
 logic w_sel_blk;
-assign w_sel_blk = OcmOnly ? w_sel_ocm : (w_sel_ocm || w_sel_ext);
+assign w_sel_blk = (!OcmOnly && EnableOcm) ? (w_sel_ocm || w_sel_ext) : w_sel_ocm;
 
 always_comb begin
     ocm_req    = granted_req;
@@ -279,7 +283,7 @@ always_comb begin
     endcase
 end
 
-if (!OcmOnly) begin : gen_ocm_llc
+if (!OcmOnly && EnableOcm) begin : gen_ocm_llc
 
     friscv_ocm_llc #(
         .OcmBase      ( OcmBase            ),
@@ -304,7 +308,7 @@ if (!OcmOnly) begin : gen_ocm_llc
         .m_rsp_i ( m_ext_rsp_i )
     );
 
-end else begin : gen_ocm_sram
+end else if (EnableOcm) begin : gen_ocm_sram
 
     localparam int unsigned OcmWords = OcmSize / 4;
     localparam int unsigned OcmAddrW = $clog2(OcmWords);
@@ -313,6 +317,7 @@ end else begin : gen_ocm_sram
         $fatal(1, "OcmSize must hold at least one word, got %0x", OcmSize);
     end
 
+    // No cache in this configuration
     assign rd_acc_o  = 1'b0;
     assign rd_miss_o = 1'b0;
     assign wr_acc_o  = 1'b0;
@@ -368,6 +373,24 @@ end else begin : gen_ocm_sram
         .be_i    ( w_be                 ),
         .rdata_o ( w_rdata              )
     );
+
+end else begin : gen_no_ocm
+
+    // No OCM and no cache in this configuration, error on access to OCM
+    always_comb begin
+        ocm_rsp     = '0;
+        ocm_rsp.err = ocm_req.en;
+    end
+
+    assign rd_acc_o  = 1'b0;
+    assign rd_miss_o = 1'b0;
+    assign wr_acc_o  = 1'b0;
+
+    // Pass through the external region
+    always_comb begin
+        m_ext_req_o    = granted_req;
+        m_ext_req_o.en = granted_req.en && w_sel_ext;
+    end
 
 end
 
